@@ -1,0 +1,78 @@
+name: Playwright Tests CI/CD
+
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 8 * * *' 
+
+  workflow_dispatch: 
+    inputs:
+      reason:
+        description: 'Motivo de la ejecución manual (ej: Debugging de TC03)'
+        required: false
+        default: 'Ejecución manual por QA'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: ⬇️ Checkout code
+      uses: actions/checkout@v4
+
+    - name: ⚙️ Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    
+    - name: 📦 Install dependencies
+      run: npm ci
+
+    - name: 🌐 Install Playwright Browsers
+      run: npx playwright install --with-deps
+
+
+    - name: 🧪 Run Playwright Tests
+      run: npx playwright test
+      
+      continue-on-error: true 
+      
+  
+    - name: ✉️ Send Report to GAS 
+      if: always() 
+      run: |
+        # Determina el estado del paso anterior (0 es éxito, >0 es fallo)
+        TEST_STATUS=$([ $? -eq 0 ] && echo "SUCCESS" || echo "FAILURE")
+        
+        # Enviar JSON con el estado del test y la URL del reporte de GitHub Pages
+        curl -X POST ${{ secrets.GAS_WEBAPP_URL }} \
+             -H "Content-Type: application/json" \
+             -d "{\"status\": \"$TEST_STATUS\", \"environment\": \"CI\", \"reportUrl\": \"https://tu-usuario.github.io/tu-repo/playwright-report/\"}"
+      env:
+        GAS_WEBAPP_URL: ${{ secrets.GAS_WEBAPP_URL }}
+        
+    # 4. PUBLICACIÓN DEL REPORTE HTML (Artefactos)
+    - name: 💾 Upload Test Results (Artifact)
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: playwright-report
+        path: playwright-report/
+        retention-days: 30
+        
+    - name: 📄 Deploy Report to GitHub Pages
+      uses: actions/github-pages/deploy-action@v4
+      if: always()
+      with:
+        artifact_name: playwright-report
+        path: playwright-report # La carpeta de salida de Playwright
