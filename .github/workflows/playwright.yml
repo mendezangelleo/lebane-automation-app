@@ -6,26 +6,36 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    - cron: '0 8 * * *'  
+    - cron: "0 8 * * *"   # todos los días a las 08:00 UTC
   workflow_dispatch:
     inputs:
+      browser:
+        description: "Selecciona el navegador para ejecutar la suite"
+        required: true
+        default: chromium
+        type: choice
+        options:
+          - chromium
+          - firefox
+          - webkit
       reason:
-        description: 'Motivo de la ejecución manual (ej: Debugging de TC03)'
+        description: "Motivo de la ejecución manual (ej: Debugging de TC03)"
         required: false
-        default: 'Ejecución manual por QA'
+        default: "Ejecución manual por QA"
 
 permissions:
   contents: read
-  pages: write       
-  id-token: write    
+  pages: write
+  id-token: write
 
 concurrency:
-  group: 'pages'
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -46,35 +56,34 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: 🧪 Run Playwright Tests
-        run: npx playwright test
-        continue-on-error: true   
-
-      
-      - name: ✉️ Send Report to GAS
-        if: always()
+        id: playwright_run
         run: |
-          curl -X POST "$GAS_WEBAPP_URL" \
-               -H "Content-Type: application/json" \
-               -d "{\"status\": \"${{ job.status }}\", \"environment\": \"CI\", \"reportUrl\": \"https://mendezangelleo.github.io/lebane-automation-app/playwright-report/\"}"
-        env:
-          GAS_WEBAPP_URL: ${{ secrets.GAS_WEBAPP_URL }}
+          npx playwright test --project "${{ github.event.inputs.browser || 'chromium' }}" -j 4
+        continue-on-error: true
 
-      
-      - name: 💾 Upload Test Results (Artifact)
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 30
-
-      
       - name: 📦 Upload GitHub Pages artifact
         if: always()
         uses: actions/upload-pages-artifact@v3
         with:
-          path: playwright-report  
+          path: playwright-report
+
       - name: 📄 Deploy Report to GitHub Pages
         id: deployment
         if: always()
         uses: actions/deploy-pages@v4
+
+      - name: ✉️ Send Report to GAS
+        if: always()
+        run: |
+          TEST_STATUS="${{ steps.playwright_run.outcome }}"
+          SELECTED_BROWSER="${{ github.event.inputs.browser || 'chromium' }}"
+
+          curl -X POST "$GAS_WEBAPP_URL" \
+               -H "Content-Type: application/json" \
+               -d "{
+                    \"status\": \"$TEST_STATUS\",
+                    \"browser\": \"$SELECTED_BROWSER\",
+                    \"reportUrl\": \"${{ steps.deployment.outputs.page_url }}\"
+                  }"
+        env:
+          GAS_WEBAPP_URL: ${{ secrets.GAS_WEBAPP_URL }}
