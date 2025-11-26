@@ -66,6 +66,43 @@ jobs:
           echo "total_time_ms=$total_ms" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
+      - name: 🧮 Parse Playwright JSON results
+        id: parse_results
+        if: always()
+        run: |
+          echo "Leyendo results.json…"
+
+          if [ ! -f results.json ]; then
+            echo "results.json no existe, devolviendo test_details=[]"
+            echo "test_details=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          node << 'EOF'
+          const fs = require('fs');
+
+          const raw = fs.readFileSync('results.json', 'utf8');
+          const data = JSON.parse(raw);
+
+          const grouped = {};
+
+          for (const t of data.tests || []) {
+            const suite = t.location?.file || 'unknown';
+            if (!grouped[suite]) {
+              grouped[suite] = { suite, tests: [] };
+            }
+            grouped[suite].tests.push({
+              browser: t.projectName,
+              duration: t.duration,
+              status: t.status,
+            });
+          }
+
+          const result = Object.values(grouped);
+          const outputLine = `test_details=${JSON.stringify(result)}\n`;
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, outputLine);
+          EOF
+
       - name: 📦 Upload GitHub Pages artifact
         if: always()
         uses: actions/upload-pages-artifact@v3
@@ -83,9 +120,13 @@ jobs:
           TEST_STATUS="${{ steps.playwright_run.outcome }}"
           SELECTED_BROWSER="${{ github.event.inputs.browser || 'chromium' }}"
           TOTAL_TIME_MS="${{ steps.playwright_run.outputs.total_time_ms }}"
+          TEST_DETAILS='${{ steps.parse_results.outputs.test_details }}'
 
-          # fallback por si por algún motivo viene vacío
+          # fallbacks
           TOTAL_TIME_MS=${TOTAL_TIME_MS:-0}
+          if [ -z "$TEST_DETAILS" ]; then
+            TEST_DETAILS='[]'
+          fi
 
           curl -X POST "$GAS_WEBAPP_URL" \
                -H "Content-Type: application/json" \
@@ -93,6 +134,7 @@ jobs:
                     \"status\": \"$TEST_STATUS\",
                     \"browser\": \"$SELECTED_BROWSER\",
                     \"totalTimeMs\": $TOTAL_TIME_MS,
+                    \"testDetails\": $TEST_DETAILS,
                     \"reportUrl\": \"${{ steps.deployment.outputs.page_url }}\"
                   }"
         env:
