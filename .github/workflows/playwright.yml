@@ -84,23 +84,46 @@ jobs:
           const raw = fs.readFileSync('results.json', 'utf8');
           const data = JSON.parse(raw);
 
-          const grouped = {};
+          const suitesOut = [];
 
-          for (const t of data.tests || []) {
-            const suite = t.location?.file || 'unknown';
-            if (!grouped[suite]) {
-              grouped[suite] = { suite, tests: [] };
+          function walkSuite(suite) {
+            const suiteName = suite.title || suite.file || 'unknown';
+
+            // specs -> tests -> results
+            for (const spec of suite.specs || []) {
+              const testsOut = [];
+
+              for (const test of spec.tests || []) {
+                const firstResult = (test.results || [])[0] || {};
+
+                testsOut.push({
+                  title: spec.title || test.title || '(sin título)',
+                  browser: test.projectName,
+                  duration: firstResult.duration || 0,
+                  status: firstResult.status || 'unknown',
+                });
+              }
+
+              if (testsOut.length) {
+                suitesOut.push({
+                  suite: suiteName,
+                  tests: testsOut,
+                });
+              }
             }
-            grouped[suite].tests.push({
-              browser: t.projectName,
-              duration: t.duration,
-              status: t.status,
-            });
+
+            
+            for (const child of suite.suites || []) {
+              walkSuite(child);
+            }
           }
 
-          const result = Object.values(grouped);
-          const outputLine = `test_details=${JSON.stringify(result)}\n`;
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, outputLine);
+          for (const root of data.suites || []) {
+            walkSuite(root);
+          }
+
+          const output = `test_details=${JSON.stringify(suitesOut)}\n`;
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, output);
           EOF
 
       - name: 📦 Upload GitHub Pages artifact

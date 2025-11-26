@@ -19,15 +19,14 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
 
-  // 🔥 REPORTERS (JSON + HTML + list)
   reporter: process.env.CI
     ? [
-        ['json', { outputFile: 'results.json' }],                        
+        ['json', { outputFile: 'results.json' }],
         ['html', { outputFolder: 'playwright-report', open: 'never' }],
       ]
     : [
-        ['list'],                                                        
-        ['json', { outputFile: 'results.json' }],                        
+        ['list'],
+        ['json', { outputFile: 'results.json' }],
         ['html', { outputFolder: 'playwright-report', open: 'never' }],
       ],
 
