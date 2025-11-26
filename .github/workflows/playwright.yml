@@ -58,7 +58,12 @@ jobs:
       - name: 🧪 Run Playwright Tests
         id: playwright_run
         run: |
+          start=$(date +%s)
           npx playwright test --project "${{ github.event.inputs.browser || 'chromium' }}" -j 4
+          end=$(date +%s)
+
+          total_ms=$(( (end - start) * 1000 ))
+          echo "total_time_ms=$total_ms" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
       - name: 📦 Upload GitHub Pages artifact
@@ -77,12 +82,17 @@ jobs:
         run: |
           TEST_STATUS="${{ steps.playwright_run.outcome }}"
           SELECTED_BROWSER="${{ github.event.inputs.browser || 'chromium' }}"
+          TOTAL_TIME_MS="${{ steps.playwright_run.outputs.total_time_ms }}"
+
+          # fallback por si por algún motivo viene vacío
+          TOTAL_TIME_MS=${TOTAL_TIME_MS:-0}
 
           curl -X POST "$GAS_WEBAPP_URL" \
                -H "Content-Type: application/json" \
                -d "{
                     \"status\": \"$TEST_STATUS\",
                     \"browser\": \"$SELECTED_BROWSER\",
+                    \"totalTimeMs\": $TOTAL_TIME_MS,
                     \"reportUrl\": \"${{ steps.deployment.outputs.page_url }}\"
                   }"
         env:
